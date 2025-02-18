@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 from contextlib import contextmanager
-from orm import User
+from .orm import User
 
 
 class BaseAbstraction:
-    def __int__(self, db: Session):
+    def __init__(self, db: Session):
         self.db = db
 
     @contextmanager
