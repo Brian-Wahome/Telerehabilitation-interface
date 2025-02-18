@@ -40,6 +40,7 @@ class TestUserAbstraction:
         mock_user.assert_called_once_with(**sample_user_data)
         user_abstraction.db.add.assert_called_once_with(created_user)
 
+
     def test_create_user_db_error(self, user_abstraction, sample_user_data):
         """Test database error during user creation"""
         # Arrange
