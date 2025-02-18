@@ -9,10 +9,11 @@ class BaseAbstraction:
     def __init__(self, db: Session):
         self.db = db
         self.session_id = str(uuid4())
-        self.logger = structlog.getLogger(__name__).bind(
+        self.logger = structlog.stdlib.get_logger(__name__).bind(
             session_id=self.session_id,
             layer="repository",
         )
+
     @contextmanager
     def transaction(self):
         try:
