@@ -2,11 +2,12 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
+from src.config.logging_config import configure_logging
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Tele-rehabilitation Interface")
+app = FastAPI(title="Tele-rehabilitation Interface", on_startup=[configure_logging])
 
 # Configure CORS
 app.add_middleware(
