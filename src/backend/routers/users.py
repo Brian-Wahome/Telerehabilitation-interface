@@ -4,6 +4,7 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, UUID4, constr
 from src.backend.dependencies.services import get_user_service
+from src.backend.exceptions import UserAlreadyExists
 from src.backend.service.users_service import UserService
 
 
@@ -41,8 +42,10 @@ def create_user(
         user_data = user_data.model_dump()
         user_service.create_user(user_data)
         return {"message": "User successfully created."}
-    except Exception as e:
+    except UserAlreadyExists:
         raise HTTPException(
-            status_code=400,
-            detail=str(e)
+            status_code=409,
+            detail=f"User with email {user_data['email']} already exists",
         )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
