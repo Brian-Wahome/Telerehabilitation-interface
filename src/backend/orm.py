@@ -1,9 +1,9 @@
 import enum
-from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Boolean, Enum, Text, JSON, TIMESTAMP, Integer
+from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Float, Enum, Text, JSON, TIMESTAMP, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
-from .database import Base
+from database import Base
 
 
 class UserRoleEnum(enum.Enum):
@@ -51,5 +51,41 @@ class Session(Base):
     # Relationships
     patient = relationship("User", foreign_keys=[patient_id], back_populates="sessions_as_patient")
     therapist = relationship("User", foreign_keys=[therapist_id], back_populates="sessions_as_therapist")
+    sensors = relationship("Sensors", back_populates="session")
 
-    # Add EMG relationship once TimeScaleDb extension is set up
+
+class Sensors(Base):
+    __tablename__ = "sensors"
+    id = Column(UUID, primary_key=True, default=uuid.uuid4())
+    session_id = Column(UUID, ForeignKey("sessions.id"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    # Relationships
+    session = relationship("Session", back_populates="sensors")
+    emg_data = relationship("EMGData", back_populates="sensor")
+
+
+class SensorPositionEnum(enum.Enum):
+    left_bicep = 1
+    left_forearm = 2
+    right_bicep = 3
+    right_forearm = 4
+
+
+class EMGData(Base):
+    __tablename__ = "emg_data"
+    time = Column(TIMESTAMP(timezone=True), primary_key=True)
+    sensor_id = Column(UUID, ForeignKey("sensors.id"), primary_key=True)
+    value = Column(Float, nullable=False)
+    sensor_position = Column(
+        Enum(
+            SensorPositionEnum,
+            name="sensor_position_enum",
+            native_enum=False,
+            create_constraint=True
+        ),
+        nullable=False,
+        comment="Allowed values: left_bicep, left_forearm, right_bicep, right_forearm"
+    )
+    # Relationship to sensor
+    sensor = relationship("Sensors", back_populates="emg_data")
