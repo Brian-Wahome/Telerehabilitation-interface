@@ -15,4 +15,4 @@ class SessionService:
             patient_id=session_data.get('patient_id'),
             therapist_id=session_data.get('therapist_id')
         )
-        self.user_abstraction.create_user(session_data)
+        self.session_abstraction.create_session(session_data)
