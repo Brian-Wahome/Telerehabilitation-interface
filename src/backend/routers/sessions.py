@@ -23,7 +23,7 @@ router = APIRouter(
 
 
 @router.post("/", status_code=201)
-def create_session(
+def schedule_session(
         session_data: SessionCreate,
         session_service: SessionService = Depends(get_session_service)
 ):
