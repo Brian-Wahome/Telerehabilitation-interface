@@ -3,7 +3,7 @@ from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Float, Enum, 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
-from database import Base
+from .database import Base
 
 
 class UserRoleEnum(enum.Enum):
