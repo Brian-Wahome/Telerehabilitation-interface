@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
+from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3849ef5c8cd'
@@ -34,6 +34,11 @@ def upgrade() -> None:
     sa.Column('sensor_position', sa.Enum('left_bicep', 'left_forearm', 'right_bicep', 'right_forearm', name='sensor_position_enum', native_enum=False, create_constraint=True), nullable=False, comment='Allowed values: left_bicep, left_forearm, right_bicep, right_forearm'),
     sa.ForeignKeyConstraint(['sensor_id'], ['sensors.id'], ),
     sa.PrimaryKeyConstraint('time', 'sensor_id')
+    )
+
+    # Create emg data hypertable
+    op.execute(
+        text("SELECT create_hypertable('emg_data', 'time', chunk_time_interval => interval '1 hour')")
     )
     # ### end Alembic commands ###
 
