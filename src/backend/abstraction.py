@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session as db_session
 from contextlib import contextmanager
-from .orm import User, Session, EMGData
+from orm import User, Session, EMGData
 from uuid import uuid4
 import structlog
 
