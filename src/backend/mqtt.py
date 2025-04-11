@@ -14,7 +14,7 @@ logger = structlog.getLogger(__name__)
 
 class EMGMQTTClient:
     def __init__(self, broker_host, broker_port, message_handler, username=None, password=None,
-                 topic_pattern="emg/+/data", transport="websockets"):
+                 topic_pattern="emg/+/data", transport="websockets", client_id=f"emg-client-{uuid.uuid4()}"):
         """
         Initialize the MQTT client for EMG data.
 
@@ -32,7 +32,7 @@ class EMGMQTTClient:
         # Create client using MQTT v5 protocol and specified transport
         self.client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"emg-client-{uuid.uuid4()}",
+            client_id,
             transport=transport
         )
 
