@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session as db_session
 from contextlib import contextmanager
-from .orm import User, Session
+from orm import User, Session, EMGData
 from uuid import uuid4
 import structlog
 
@@ -38,3 +38,10 @@ class SessionAbstraction(BaseAbstraction):
         with self.transaction():
             session = Session(**session)
             self.db.add(session)
+
+
+class MQTTAbstraction(BaseAbstraction):
+    def add_emg_data(self, emg_data: dict):
+        with self.transaction():
+            emg_data = EMGData(**emg_data)
+            self.db.add(emg_data)
