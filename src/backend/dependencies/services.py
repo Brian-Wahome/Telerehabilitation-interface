@@ -6,6 +6,8 @@ from ..service.users_service import UserService
 from ..service.sessions_service import SessionService
 from ..service.mqtt_service import MQTTService
 
+mqtt_service = MQTTService()
+
 
 def get_user_service(db: Session = Depends(get_db)) -> UserService:
     user_abstraction = UserAbstraction(db)
@@ -18,4 +20,4 @@ def get_session_service(db: Session = Depends(get_db)) -> SessionService:
 
 
 def get_mqtt_service() -> MQTTService:
-    return MQTTService()
+    return mqtt_service
