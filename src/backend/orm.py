@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Float, Enum, Text, JSON, TIMESTAMP, Integer
+from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Float, Enum, Boolean, TIMESTAMP, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -65,6 +65,39 @@ class Sensors(Base):
     emg_data = relationship("EMGData", back_populates="sensor")
 
 
+class Exercise(Base):
+    __tablename__ = "exercises"
+
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID, ForeignKey("sessions.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(String(500))
+    notes = Column(String(500))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    # Relationships
+    session = relationship("Session", back_populates="exercises")
+    sets = relationship("ExerciseSet", back_populates="exercise")
+
+
+class ExerciseSet(Base):
+    __tablename__ = "exercise_sets"
+
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    exercise_id = Column(UUID, ForeignKey("exercises.id"), nullable=False)
+    set_number = Column(Integer, nullable=False)
+    repetitions = Column(Integer)
+    weight = Column(Float)
+    start_time = Column(TIMESTAMP(timezone=True), nullable=False)
+    end_time = Column(TIMESTAMP(timezone=True))
+    completed = Column(Boolean, default=False)
+    notes = Column(String(500))
+
+    # Relationships
+    exercise = relationship("Exercise", back_populates="sets")
+    emg_data = relationship("EMGData", back_populates="exercise_set")
+
+
 class SensorPositionEnum(enum.Enum):
     left_bicep = 1
     left_forearm = 2
@@ -87,5 +120,7 @@ class EMGData(Base):
         nullable=False,
         comment="Allowed values: left_bicep, left_forearm, right_bicep, right_forearm"
     )
-    # Relationship to sensor
+    exercise_set_id = Column(UUID, ForeignKey("exercise_sets.id"), nullable=True)
+    # Relationships
     sensor = relationship("Sensors", back_populates="emg_data")
+    exercise_set = relationship("ExerciseSet", back_populates="emg_data")
