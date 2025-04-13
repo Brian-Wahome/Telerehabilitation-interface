@@ -118,7 +118,10 @@ class EMGMQTTClient:
         if rc == 0:
             logger.info("Successfully connected to MQTT broker")
             # Subscribe to EMG data topics using the configured pattern
-            client.subscribe(self.topic_pattern)
+            client.subscribe([
+                (self.topic_pattern, 0),
+                ("control/disconnect", 0)
+            ])
             logger.info(f"Subscribed to topic: {self.topic_pattern}")
         else:
             logger.error(f"Connection to MQTT broker failed with code {rc}")
@@ -142,6 +145,9 @@ class EMGMQTTClient:
                 except json.JSONDecodeError:
                     # If not valid JSON, use raw payload
                     payload = msg.payload.decode()
+
+                if msg.topic == "control/disconnect" and payload["client_id"] == client.client_id:
+                    self.client.disconnect()
 
                 # Create message data with topic and payload
                 message_data = {
