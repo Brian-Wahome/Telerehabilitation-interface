@@ -11,3 +11,10 @@ class UserAlreadyExists(AppExceptions):
     with information that already exists
     """
     pass
+
+
+class MQTTClientNotFound(AppExceptions):
+    """
+    Exception raised on attempt to disconnect, delete or retrieve
+    a mqtt client that no longer exists.
+    """
