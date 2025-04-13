@@ -179,12 +179,17 @@ class EMGMQTTClient:
         except Exception as e:
             logger.error(f"Error in message callback: {e}", exc_info=True)
 
-    def on_disconnect(self, client, userdata, rc, properties=None):
-        """Callback when disconnected from the broker (API v2 signature)."""
-        if rc != 0:
-            logger.warning(f"Unexpected disconnection from MQTT broker with code {rc}")
+    def on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
+        """Callback when disconnected from the broker (API v2 with MQTT v5)."""
+        if reason_code != 0:
+            logger.warning(
+                f"Unexpected disconnection from MQTT broker. Reason code: {reason_code}, Flags: {disconnect_flags}")
         else:
-            logger.info("Disconnected from MQTT broker")
+            logger.info("Disconnected from MQTT broker cleanly")
+
+        # Handle properties if needed
+        if properties:
+            logger.debug(f"Disconnect properties: {properties}")
 
     def publish(self, topic, payload, qos=0, retain=False, properties=None):
         """
