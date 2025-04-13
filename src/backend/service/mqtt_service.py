@@ -7,11 +7,22 @@ class MQTTService:
     def __init__(self):
         self.mqtt_clients = {}
         self.logger = structlog.get_logger(__name__)
-        self.mqtt_client
 
     def setup_mqtt_client(self, broker_host="localhost", broker_port=8083, username=None, password=None,
                           topic_pattern="emg/+/data", transport="websockets", client_id="default",
                           message_handler=None):
+        """
+        Function to set up a MQTT client
+        :param broker_host: MQTT broker hostname or IP
+        :param broker_port: MQTT broker port
+        :param username: MQTT broker username (optional)
+        :param password: MQTT broker password (optional)
+        :param topic_pattern: Topic pattern to subscribe to (default: "emg/+/data")
+        :param transport: Transport protocol ("websockets" or "tcp")
+        :param client_id: Client identifier
+        :param message_handler: Callback function or object method to handle MQTT messages
+        :return:
+        """
         try:
             mqtt_client = EMGMQTTClient(
                 broker_host,
@@ -38,6 +49,11 @@ class MQTTService:
             raise
 
     def disconnect_client(self, client_id="default"):
+        """
+        Disconnect client from mqtt broker
+        :param client_id: ID of client to be disconnected
+        :return:
+        """
         try:
             # Check if we have this specific client ID
             if client_id not in self.mqtt_clients:
@@ -68,3 +84,11 @@ class MQTTService:
                 error=str(e)
             )
             raise
+
+    def remove_client(self, client_id):
+        """Remove a client from our registry (after confirming disconnection)"""
+        if client_id in self.mqtt_clients:
+            del self.mqtt_clients[client_id]
+            self.logger.info("Client removed from registry", mqtt_client_id=client_id)
+            return True
+        return False
