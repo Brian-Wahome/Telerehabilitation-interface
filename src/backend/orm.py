@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Float, Enum, Boolean, TIMESTAMP, Integer
+from sqlalchemy import Column, String, UUID, DateTime, ForeignKey, Float, Enum, TIMESTAMP, Integer, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -40,7 +40,7 @@ class User(Base):
 class Session(Base):
     __tablename__ = "sessions"
 
-    id = Column(UUID, primary_key=True, default=uuid.uuid4())
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
     patient_id = Column(UUID, ForeignKey("users.id"), nullable=False)
     therapist_id = Column(UUID, ForeignKey("users.id"), nullable=False)
     scheduled_time = Column(DateTime(timezone=True), nullable=False)
@@ -52,17 +52,7 @@ class Session(Base):
     patient = relationship("User", foreign_keys=[patient_id], back_populates="sessions_as_patient")
     therapist = relationship("User", foreign_keys=[therapist_id], back_populates="sessions_as_therapist")
     sensors = relationship("Sensors", back_populates="session")
-
-
-class Sensors(Base):
-    __tablename__ = "sensors"
-    id = Column(UUID, primary_key=True, default=uuid.uuid4())
-    session_id = Column(UUID, ForeignKey("sessions.id"), nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-
-    # Relationships
-    session = relationship("Session", back_populates="sensors")
-    emg_data = relationship("EMGData", back_populates="sensor")
+    exercises = relationship("Exercise", back_populates="session")
 
 
 class Exercise(Base):
@@ -98,6 +88,17 @@ class ExerciseSet(Base):
     emg_data = relationship("EMGData", back_populates="exercise_set")
 
 
+class Sensors(Base):
+    __tablename__ = "sensors"
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID, ForeignKey("sessions.id"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    # Relationships
+    session = relationship("Session", back_populates="sensors")
+    emg_data = relationship("EMGData", back_populates="sensor")
+
+
 class SensorPositionEnum(enum.Enum):
     left_bicep = 1
     left_forearm = 2
@@ -109,6 +110,7 @@ class EMGData(Base):
     __tablename__ = "emg_data"
     time = Column(TIMESTAMP(timezone=True), primary_key=True)
     sensor_id = Column(UUID, ForeignKey("sensors.id"), primary_key=True)
+    exercise_set_id = Column(UUID, ForeignKey("exercise_sets.id"), nullable=True)
     value = Column(Float, nullable=False)
     sensor_position = Column(
         Enum(
@@ -120,7 +122,6 @@ class EMGData(Base):
         nullable=False,
         comment="Allowed values: left_bicep, left_forearm, right_bicep, right_forearm"
     )
-    exercise_set_id = Column(UUID, ForeignKey("exercise_sets.id"), nullable=True)
     # Relationships
     sensor = relationship("Sensors", back_populates="emg_data")
     exercise_set = relationship("ExerciseSet", back_populates="emg_data")
