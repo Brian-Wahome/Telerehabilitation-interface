@@ -1,9 +1,10 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..abstraction import UserAbstraction, SessionAbstraction
+from ..abstraction import UserAbstraction, SessionAbstraction, MQTTAbstraction
 from ..service.users_service import UserService
 from ..service.sessions_service import SessionService
+from ..service.mqtt_service import MQTTService
 
 
 def get_user_service(db: Session = Depends(get_db)) -> UserService:
@@ -14,3 +15,7 @@ def get_user_service(db: Session = Depends(get_db)) -> UserService:
 def get_session_service(db: Session = Depends(get_db)) -> SessionService:
     session_abstraction = SessionAbstraction(db)
     return SessionService(session_abstraction)
+
+
+def get_mqtt_service() -> MQTTService:
+    return MQTTService()
