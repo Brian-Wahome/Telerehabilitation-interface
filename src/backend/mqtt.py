@@ -1,5 +1,4 @@
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from socket import socket
@@ -28,6 +27,7 @@ class EMGMQTTClient:
                            The '+' is a wildcard for any single topic level
                            The '#' is a wildcard for multiple topic levels
             transport: Transport protocol ("websockets" or "tcp")
+            client_id: Client identifier
         """
         # Create client using MQTT v5 protocol and specified transport
         self.client = mqtt.Client(
@@ -50,6 +50,7 @@ class EMGMQTTClient:
         self.transport = transport
         self.message_handler = message_handler
         self.topic_pattern = topic_pattern
+        self.client_id = client_id
 
     def connect(self):
         """Connect to the MQTT broker and start the loop."""
@@ -146,7 +147,7 @@ class EMGMQTTClient:
                     # If not valid JSON, use raw payload
                     payload = msg.payload.decode()
 
-                if msg.topic == "control/disconnect" and payload["client_id"] == client.client_id:
+                if msg.topic == "control/disconnect" and payload["client_id"] == self.client_id:
                     self.client.disconnect()
 
                 # Create message data with topic and payload
