@@ -1,8 +1,10 @@
 from datetime import datetime
-
+from io import BytesIO
+from typing import Optional, Dict
+import pandas as pd
 from sqlalchemy.orm import Session as db_session
 from contextlib import contextmanager
-from orm import User, Session, EMGData, Exercise, ExerciseSet
+from orm import User, Session, EMGData, Exercise, ExerciseSet, Sensors, SensorPositionEnum
 from uuid import uuid4
 import structlog
 
@@ -44,9 +46,44 @@ class SessionAbstraction(BaseAbstraction):
 
 class MQTTAbstraction(BaseAbstraction):
     def add_emg_data(self, emg_data: dict):
-        with self.transaction():
-            emg_data = EMGData(**emg_data)
-            self.db.add(emg_data)
+        try:
+            sensor_id = emg_data.get("sensor_id")
+
+            # retrieve session
+            if sensor_id:
+                sensor = self.db.query(Sensors).filter(Sensors.id == sensor_id).first()
+                if sensor:
+                    session_id = sensor.session_id
+                    # Check if there's an active exercise set for this session
+                    if session_id in self.active_exercise_sets:
+                        emg_data["exercise_set_id"] = self.active_exercise_sets[session_id]
+            with self.transaction():
+                emg_data = EMGData(**emg_data)
+                self.db.add(emg_data)
+
+        except Exception as e:
+            self.logger.error(f"Error adding EMG data: {e}", exc_info=True)
+            raise
+
+    def set_active_exercise_set(self, session_id: str, exercise_set_id: str):
+        """Set the active exercise set for a session"""
+        self.active_exercise_sets[session_id] = exercise_set_id
+        self.logger.info(f"Set active exercise set",
+                         session_id=session_id,
+                         exercise_set_id=exercise_set_id)
+        return {"session_id": session_id, "active_exercise_set_id": exercise_set_id}
+
+    def clear_active_exercise_set(self, session_id: str):
+        """Clear the active exercise set for a session"""
+        previous_set_id = None
+        if session_id in self.active_exercise_sets:
+            previous_set_id = self.active_exercise_sets[session_id]
+            del self.active_exercise_sets[session_id]
+            self.logger.info(f"Cleared active exercise set",
+                             session_id=session_id,
+                             previous_set_id=previous_set_id)
+
+        return {"session_id": session_id, "previous_exercise_set_id": previous_set_id}
 
 
 class ExerciseAbstraction(BaseAbstraction):
@@ -104,3 +141,106 @@ class ExerciseSetAbstraction(BaseAbstraction):
                 if notes:
                     exercise_set.notes = notes
             return exercise_set
+
+    def get_emg_data_for_set(self, set_id: str, sensor_position: Optional[str] = None) -> Dict:
+        """
+        Get EMG data for a specific exercise set
+
+        Args:
+            set_id: The ID of the exercise set
+            sensor_position: Optional filter for specific sensor position
+
+        Returns:
+            Dictionary containing the set info and EMG data
+        """
+        # Get the exercise set
+        exercise_set = self.get_set_by_id(set_id)
+        if not exercise_set:
+            return {"set_id": set_id, "data": []}
+
+        # Build the query for EMG data
+        query = self.db.query(EMGData).filter(EMGData.exercise_set_id == set_id)
+
+        # Apply sensor position filter if specified
+        if sensor_position:
+            try:
+                # convert string position to enum
+                position_enum = SensorPositionEnum[sensor_position]
+                query = query.filter(EMGData.sensor_position == position_enum)
+            except (KeyError, ValueError):
+                self.logger.warning(f"Invalid sensor position: {sensor_position}")
+
+        # Get start and end times
+        if exercise_set.start_time:
+            query = query.filter(EMGData.time >= exercise_set.start_time)
+
+        if exercise_set.end_time:
+            query = query.filter(EMGData.time <= exercise_set.end_time)
+
+        # Order by time
+        query = query.order_by(EMGData.time)
+
+        # Execute query
+        emg_data = query.all()
+
+        # Format the data for response
+        formatted_data = []
+        for data in emg_data:
+            formatted_data.append({
+                "time": data.time.isoformat(),
+                "sensor_position": data.sensor_position.name,
+                "value": data.value,
+                "sensor_id": str(data.sensor_id)
+            })
+
+        # Get exercise information
+        exercise = self.db.query(Exercise).filter(Exercise.id == exercise_set.exercise_id).first()
+
+        return {
+            "set_id": str(set_id),
+            "exercise_id": str(exercise_set.exercise_id),
+            "exercise_name": exercise.name if exercise else None,
+            "set_number": exercise_set.set_number,
+            "start_time": exercise_set.start_time.isoformat() if exercise_set.start_time else None,
+            "end_time": exercise_set.end_time.isoformat() if exercise_set.end_time else None,
+            "data": formatted_data
+        }
+
+    def download_emg_data_for_set(self, set_id: str, format: str = "csv") -> Dict:
+        """
+        Download EMG data for a specific exercise set in CSV or JSON format
+
+        Args:
+            set_id: The ID of the exercise set
+            format: The format to download ('csv' or 'json')
+
+        Returns:
+            Dictionary with format and data
+        """
+        # Get the EMG data
+        result = self.get_emg_data_for_set(set_id)
+        data = result.get("data", [])
+
+        if not data:
+            return {"format": format, "data": []}
+
+        if format.lower() == "csv":
+            # Create a DataFrame and convert to CSV
+            df = pd.DataFrame(data)
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+
+            return {
+                "format": "csv",
+                "data": output
+            }
+
+        elif format.lower() == "json":
+            return {
+                "format": "json",
+                "data": data
+            }
+
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'csv' or 'json'.")
