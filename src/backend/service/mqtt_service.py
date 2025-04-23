@@ -1,3 +1,5 @@
+import uuid
+
 import structlog
 from src.backend.mqtt import EMGMQTTClient
 from ..exceptions import MQTTClientNotFound
@@ -9,7 +11,7 @@ class MQTTService:
         self.logger = structlog.get_logger(__name__)
 
     def setup_mqtt_client(self, broker_host="localhost", broker_port=8083, username=None, password=None,
-                          topic_pattern="emg/+/data", transport="websockets", client_id="default",
+                          topic_pattern="emg/+/+/data", transport="websockets", client_id=f'emg-client-{uuid.uuid4()}',
                           message_handler=None):
         """
         Function to set up a MQTT client
