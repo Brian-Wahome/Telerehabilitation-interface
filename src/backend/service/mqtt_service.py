@@ -92,3 +92,20 @@ class MQTTService:
             self.logger.info("Client removed from registry", mqtt_client_id=client_id)
             return True
         return False
+
+    def set_active_exercise_set(self, session_id: str, exercise_set_id: str):
+        """Set the active exercise set for a session"""
+        self.logger.info(
+            "Setting active exercise set",
+            session_id=session_id,
+            exercise_set_id=exercise_set_id
+        )
+        return self.mqtt_abstraction.set_active_exercise_set(session_id, exercise_set_id)
+
+    def clear_active_exercise_set(self, session_id: str):
+        """Clear the active exercise set for a session"""
+        self.logger.info(
+            "Clearing active exercise set",
+            session_id=session_id
+        )
+        return self.mqtt_abstraction.clear_active_exercise_set(session_id)
