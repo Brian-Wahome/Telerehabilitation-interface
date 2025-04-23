@@ -33,7 +33,7 @@ def get_exercise_service(db: Session = Depends(get_db)) -> ExerciseService:
 
 
 def get_exercise_set_service(db: Session = Depends(get_db)) -> ExerciseSetService:
-    exercise_set_abstraction = ExerciseSetService(db)
+    exercise_set_abstraction = ExerciseSetAbstraction(db)
     return ExerciseSetAbstraction(exercise_set_abstraction)
 
 
@@ -44,4 +44,4 @@ def get_emg_data_service(db: Session = Depends(get_db)) -> EMGDataService:
 
 def get_mqtt_abstraction(db: Session = Depends(get_db)) -> MQTTAbstraction:
     mqtt_abstraction = MQTTAbstraction(db)
-    return MQTTAbstraction
+    return mqtt_abstraction
