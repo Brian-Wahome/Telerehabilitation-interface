@@ -1,14 +1,14 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
-from ..database import get_db
-from ..abstraction import UserAbstraction, SessionAbstraction, ExerciseAbstraction, ExerciseSetAbstraction, \
+from src.backend.database import get_db
+from src.backend.abstraction import UserAbstraction, SessionAbstraction, ExerciseAbstraction, ExerciseSetAbstraction, \
     EMGDataAbstraction, MQTTAbstraction
-from ..service.users_service import UserService
-from ..service.sessions_service import SessionService
-from ..service.mqtt_service import MQTTService
-from ..service.excercise_service import ExerciseService
-from ..service.exercise_set_service import ExerciseSetService
-from ..service.emg_data_service import EMGDataService
+from src.backend.service.users_service import UserService
+from src.backend.service.sessions_service import SessionService
+from src.backend.service.mqtt_service import MQTTService
+from src.backend.service.excercise_service import ExerciseService
+from src.backend.service.exercise_set_service import ExerciseSetService
+from src.backend.service.emg_data_service import EMGDataService
 
 mqtt_service = MQTTService()
 
