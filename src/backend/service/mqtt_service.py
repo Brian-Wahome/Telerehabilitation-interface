@@ -11,7 +11,7 @@ class MQTTService:
         self.logger = structlog.get_logger(__name__)
 
     def setup_mqtt_client(self, broker_host="localhost", broker_port=8083, username=None, password=None,
-                          topic_pattern="emg/+/+/data", transport="websockets", client_id=f'emg-client-{uuid.uuid4()}',
+                          topic_pattern="emg/+/+/data", transport="websockets", client_id="emg-client",
                           message_handler=None):
         """
         Function to set up a MQTT client
@@ -50,7 +50,7 @@ class MQTTService:
             )
             raise
 
-    def disconnect_client(self, client_id="default"):
+    def disconnect_client(self, client_id="emg-client"):
         """
         Disconnect client from mqtt broker
         :param client_id: ID of client to be disconnected
