@@ -9,6 +9,11 @@ class SessionService:
         self.logger = structlog.get_logger(__name__)
 
     def create_session(self, session_data: Dict):
+        """
+        Function schedule a session with therapist.
+        :param session_data:
+        :return:
+        """
         self.logger.info(
             "Creating session",
             rehabilitation_session_id=session_data.get('id'),
