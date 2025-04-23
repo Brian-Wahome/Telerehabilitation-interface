@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.orm import Session as db_session
 from contextlib import contextmanager
 from orm import User, Session, EMGData, Exercise, ExerciseSet, Sensors, SensorPositionEnum
@@ -244,3 +245,529 @@ class ExerciseSetAbstraction(BaseAbstraction):
 
         else:
             raise ValueError(f"Unsupported format: {format}. Use 'csv' or 'json'.")
+
+
+class EMGDataAbstraction(BaseAbstraction):
+    def get_emg_data_for_session(
+            self,
+            session_id: str,
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None,
+            sensor_position: Optional[str] = None,
+            include_exercise_info: bool = True
+    ) -> Dict:
+        """
+        Get all EMG data for a specific therapy session
+
+        Args:
+            session_id: The ID of the therapy session
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            sensor_position: Optional filter for specific sensor position
+            include_exercise_info: Whether to include exercise and set information
+
+        Returns:
+            Dictionary containing the session info and EMG data
+        """
+        # Get the session
+        session = self.db.query(Session).filter(Session.id == session_id).first()
+        if not session:
+            return {"session_id": session_id, "data": []}
+
+        # Get all sensors for this session
+        sensors = self.db.query(Sensors).filter(Sensors.session_id == session_id).all()
+        if not sensors:
+            return {"session_id": session_id, "data": []}
+
+        sensor_ids = [sensor.id for sensor in sensors]
+
+        # Build the query for EMG data
+        query = self.db.query(EMGData).filter(EMGData.sensor_id.in_(sensor_ids))
+
+        # Apply filters
+        if start_time:
+            query = query.filter(EMGData.time >= start_time)
+        elif session.scheduled_time:
+            query = query.filter(EMGData.time >= session.scheduled_time)
+
+        if end_time:
+            query = query.filter(EMGData.time <= end_time)
+        elif session.completed:
+            query = query.filter(EMGData.time <= session.completed)
+
+        if sensor_position:
+            try:
+                # Try to convert string position to enum
+                position_enum = SensorPositionEnum[sensor_position]
+                query = query.filter(EMGData.sensor_position == position_enum)
+            except (KeyError, ValueError):
+                self.logger.warning(f"Invalid sensor position: {sensor_position}")
+
+        # Order by time
+        query = query.order_by(EMGData.time)
+
+        # Execute query
+        emg_data = query.all()
+
+        # Format the data for response
+        formatted_data = []
+        for data in emg_data:
+            emg_record = {
+                "time": data.time.isoformat(),
+                "sensor_position": data.sensor_position.name,
+                "value": data.value,
+                "sensor_id": str(data.sensor_id)
+            }
+
+            # Add exercise set info if available and requested
+            if include_exercise_info and data.exercise_set_id:
+                exercise_set = self.db.query(ExerciseSet).filter(ExerciseSet.id == data.exercise_set_id).first()
+                if exercise_set:
+                    emg_record["exercise_set_id"] = str(data.exercise_set_id)
+                    emg_record["set_number"] = exercise_set.set_number
+
+                    exercise = self.db.query(Exercise).filter(Exercise.id == exercise_set.exercise_id).first()
+                    if exercise:
+                        emg_record["exercise_id"] = str(exercise_set.exercise_id)
+                        emg_record["exercise_name"] = exercise.name
+
+            formatted_data.append(emg_record)
+
+        # Get patient and therapist info
+        patient = self.db.query(User).filter(User.id == session.patient_id).first()
+        therapist = self.db.query(User).filter(User.id == session.therapist_id).first()
+
+        # Calculate statistics
+        stats = self._calculate_emg_statistics(formatted_data)
+
+        return {
+            "session_id": str(session_id),
+            "patient": {
+                "id": str(session.patient_id),
+                "name": f"{patient.first_name} {patient.last_name}" if patient else "Unknown"
+            },
+            "therapist": {
+                "id": str(session.therapist_id),
+                "name": f"{therapist.first_name} {therapist.last_name}" if therapist else "Unknown"
+            },
+            "scheduled_time": session.scheduled_time.isoformat() if session.scheduled_time else None,
+            "completed": session.completed.isoformat() if session.completed else None,
+            "statistics": stats,
+            "data_points_count": len(formatted_data),
+            "data": formatted_data
+        }
+
+    def get_emg_data_for_multiple_sessions(
+            self,
+            session_ids: List[str],
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None,
+            sensor_position: Optional[str] = None,
+            include_exercise_info: bool = True
+    ) -> Dict:
+        """
+        Get EMG data for multiple sessions, useful for comparing progress over time
+
+        Args:
+            session_ids: List of session IDs to include
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            sensor_position: Optional filter for specific sensor position
+            include_exercise_info: Whether to include exercise and set information
+
+        Returns:
+            Dictionary containing the sessions info and EMG data
+        """
+        # Validate the session IDs
+        valid_sessions = self.db.query(Session).filter(
+            Session.id.in_(session_ids)
+        ).all()
+
+        if not valid_sessions:
+            return {"session_ids": session_ids, "sessions": [], "data": []}
+
+        valid_session_ids = [str(session.id) for session in valid_sessions]
+
+        # Process each session
+        sessions_data = []
+        all_emg_data = []
+
+        for session_id in valid_session_ids:
+            session_result = self.get_emg_data_for_session(
+                session_id=session_id,
+                start_time=start_time,
+                end_time=end_time,
+                sensor_position=sensor_position,
+                include_exercise_info=include_exercise_info
+            )
+
+            # Add session summary to the list
+            session_summary = {
+                "session_id": session_id,
+                "patient": session_result.get("patient"),
+                "scheduled_time": session_result.get("scheduled_time"),
+                "completed": session_result.get("completed"),
+                "data_points_count": session_result.get("data_points_count", 0),
+                "statistics": session_result.get("statistics", {})
+            }
+            sessions_data.append(session_summary)
+
+            # Add EMG data to the combined list
+            for data_point in session_result.get("data", []):
+                # Add session ID to each data point for reference
+                data_point["session_id"] = session_id
+                all_emg_data.append(data_point)
+
+        # Sort all data by time
+        all_emg_data.sort(key=lambda x: x.get("time"))
+
+        # Generate overall statistics
+        overall_stats = self._calculate_emg_statistics(all_emg_data)
+
+        return {
+            "session_ids": valid_session_ids,
+            "sessions": sessions_data,
+            "overall_statistics": overall_stats,
+            "data_points_count": len(all_emg_data),
+            "data": all_emg_data
+        }
+
+    def get_patient_progress(
+            self,
+            patient_id: str,
+            time_range: Optional[int] = 30,  # Default to last 30 days
+            exercise_name: Optional[str] = None,
+            sensor_position: Optional[str] = None
+    ) -> Dict:
+        """
+        Get a patient's progress over time, suitable for trend analysis
+
+        Args:
+            patient_id: The ID of the patient
+            time_range: Number of days to look back (default: 30)
+            exercise_name: Optional filter for specific exercise
+            sensor_position: Optional filter for specific sensor position
+
+        Returns:
+            Dictionary containing progress data and trends
+        """
+        # Calculate the start date
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=time_range)
+
+        # Get all sessions for this patient in the time range
+        sessions = self.db.query(Session).filter(
+            Session.patient_id == patient_id,
+            Session.scheduled_time >= start_date,
+            Session.scheduled_time <= end_date
+        ).order_by(Session.scheduled_time).all()
+
+        if not sessions:
+            return {"patient_id": patient_id, "sessions": [], "progress_data": []}
+
+        session_ids = [str(session.id) for session in sessions]
+
+        # Get all exercises for these sessions if exercise_name filter is applied
+        exercise_filter = None
+        if exercise_name:
+            exercises = self.db.query(Exercise).filter(
+                Exercise.session_id.in_(session_ids),
+                Exercise.name.ilike(f"%{exercise_name}%")
+            ).all()
+
+            if exercises:
+                exercise_ids = [str(exercise.id) for exercise in exercises]
+
+                # Get all sets for these exercises
+                exercise_sets = self.db.query(ExerciseSet).filter(
+                    ExerciseSet.exercise_id.in_(exercise_ids)
+                ).all()
+
+                if exercise_sets:
+                    exercise_set_ids = [str(exercise_set.id) for exercise_set in exercise_sets]
+                    exercise_filter = exercise_set_ids
+
+        # Process each session to collect data
+        progress_data = []
+        session_summaries = []
+
+        for session in sessions:
+            session_id = str(session.id)
+
+            # Build the EMG data query
+            sensors = self.db.query(Sensors).filter(Sensors.session_id == session_id).all()
+            if not sensors:
+                continue
+
+            sensor_ids = [sensor.id for sensor in sensors]
+            query = self.db.query(EMGData).filter(EMGData.sensor_id.in_(sensor_ids))
+
+            # Apply sensor position filter
+            if sensor_position:
+                try:
+                    position_enum = SensorPositionEnum[sensor_position]
+                    query = query.filter(EMGData.sensor_position == position_enum)
+                except (KeyError, ValueError):
+                    self.logger.warning(f"Invalid sensor position: {sensor_position}")
+
+            # Apply exercise filter if available
+            if exercise_filter:
+                query = query.filter(EMGData.exercise_set_id.in_(exercise_filter))
+
+            # Get session time boundaries
+            if session.scheduled_time:
+                query = query.filter(EMGData.time >= session.scheduled_time)
+
+            if session.completed:
+                query = query.filter(EMGData.time <= session.completed)
+
+            # Get aggregated statistics
+            max_value = query.with_entities(func.max(EMGData.value)).scalar() or 0
+            avg_value = query.with_entities(func.avg(EMGData.value)).scalar() or 0
+            count = query.count()
+
+            # Add to progress data
+            session_date = session.scheduled_time.date().isoformat() if session.scheduled_time else "Unknown"
+            progress_point = {
+                "date": session_date,
+                "session_id": session_id,
+                "max_value": max_value,
+                "avg_value": avg_value,
+                "data_points": count
+            }
+            progress_data.append(progress_point)
+
+            # Add session summary
+            therapist = self.db.query(User).filter(User.id == session.therapist_id).first()
+            session_summary = {
+                "session_id": session_id,
+                "date": session_date,
+                "therapist": {
+                    "id": str(session.therapist_id),
+                    "name": f"{therapist.first_name} {therapist.last_name}" if therapist else "Unknown"
+                },
+                "completed": session.completed is not None,
+                "emg_stats": {
+                    "max_value": max_value,
+                    "avg_value": avg_value,
+                    "data_points": count
+                }
+            }
+            session_summaries.append(session_summary)
+
+        # Calculate trends
+        trends = self._calculate_progress_trends(progress_data)
+
+        # Get patient info
+        patient = self.db.query(User).filter(User.id == patient_id).first()
+        patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Unknown"
+
+        return {
+            "patient_id": patient_id,
+            "patient_name": patient_name,
+            "sessions_count": len(sessions),
+            "date_range": {
+                "start": start_date.date().isoformat(),
+                "end": end_date.date().isoformat()
+            },
+            "filter": {
+                "exercise_name": exercise_name,
+                "sensor_position": sensor_position
+            },
+            "trends": trends,
+            "sessions": session_summaries,
+            "progress_data": progress_data
+        }
+
+    def download_emg_data_for_session(
+            self,
+            session_id: str,
+            format: str = "csv",
+            include_exercise_info: bool = True
+    ) -> Dict:
+        """
+        Download EMG data for a specific session in CSV or JSON format
+
+        Args:
+            session_id: The ID of the therapy session
+            format: The format to download ('csv' or 'json')
+            include_exercise_info: Whether to include exercise and set information
+
+        Returns:
+            Dictionary with format and data
+        """
+        # Get the EMG data
+        result = self.get_emg_data_for_session(session_id, include_exercise_info=include_exercise_info)
+        data = result.get("data", [])
+
+        if not data:
+            return {"format": format, "data": []}
+
+        if format.lower() == "csv":
+            # Create a DataFrame and convert to CSV
+            df = pd.DataFrame(data)
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+
+            return {
+                "format": "csv",
+                "data": output
+            }
+
+        elif format.lower() == "json":
+            return {
+                "format": "json",
+                "data": data
+            }
+
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'csv' or 'json'.")
+
+    def download_emg_data_for_multiple_sessions(
+            self,
+            session_ids: List[str],
+            format: str = "csv",
+            include_exercise_info: bool = True
+    ) -> Dict:
+        """
+        Download EMG data for multiple sessions in CSV or JSON format
+
+        Args:
+            session_ids: List of session IDs to include
+            format: The format to download ('csv' or 'json')
+            include_exercise_info: Whether to include exercise and set information
+
+        Returns:
+            Dictionary with format and data
+        """
+        # Get the EMG data
+        result = self.get_emg_data_for_multiple_sessions(
+            session_ids,
+            include_exercise_info=include_exercise_info
+        )
+        data = result.get("data", [])
+
+        if not data:
+            return {"format": format, "data": []}
+
+        if format.lower() == "csv":
+            # Create a DataFrame and convert to CSV
+            df = pd.DataFrame(data)
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+
+            return {
+                "format": "csv",
+                "data": output
+            }
+
+        elif format.lower() == "json":
+            return {
+                "format": "json",
+                "data": data
+            }
+
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'csv' or 'json'.")
+
+    def _calculate_emg_statistics(self, emg_data: List[Dict]) -> Dict:
+        """
+        Calculate statistics for EMG data
+
+        Args:
+            emg_data: List of EMG data points
+
+        Returns:
+            Dictionary with statistics
+        """
+        if not emg_data:
+            return {
+                "min": 0,
+                "max": 0,
+                "avg": 0,
+                "by_sensor_position": {}
+            }
+
+        # Overall statistics
+        values = [point.get("value", 0) for point in emg_data]
+        min_value = min(values) if values else 0
+        max_value = max(values) if values else 0
+        avg_value = sum(values) / len(values) if values else 0
+
+        # Group by sensor position
+        positions = {}
+        for point in emg_data:
+            position = point.get("sensor_position")
+            if position not in positions:
+                positions[position] = []
+            positions[position].append(point.get("value", 0))
+
+        # Calculate statistics by position
+        position_stats = {}
+        for position, pos_values in positions.items():
+            position_stats[position] = {
+                "min": min(pos_values) if pos_values else 0,
+                "max": max(pos_values) if pos_values else 0,
+                "avg": sum(pos_values) / len(pos_values) if pos_values else 0,
+                "count": len(pos_values)
+            }
+
+        return {
+            "min": min_value,
+            "max": max_value,
+            "avg": avg_value,
+            "by_sensor_position": position_stats
+        }
+
+    def _calculate_progress_trends(self, progress_data: List[Dict]) -> Dict:
+        """
+        Calculate trend information from progress data
+
+        Args:
+            progress_data: List of progress data points
+
+        Returns:
+            Dictionary with trend information
+        """
+        if not progress_data or len(progress_data) < 2:
+            return {
+                "direction": "unchanged",
+                "percent_change": 0,
+                "is_improving": False
+            }
+
+        # Sort by date
+        sorted_data = sorted(progress_data, key=lambda x: x.get("date", ""))
+
+        # Get first and last values
+        first_avg = sorted_data[0].get("avg_value", 0)
+        last_avg = sorted_data[-1].get("avg_value", 0)
+
+        # Calculate percent change
+        if first_avg > 0:
+            percent_change = ((last_avg - first_avg) / first_avg) * 100
+        else:
+            percent_change = 0 if last_avg == 0 else 100
+
+        # Determine direction
+        if percent_change > 5:
+            direction = "increasing"
+            is_improving = True  # Assuming higher EMG values are better
+        elif percent_change < -5:
+            direction = "decreasing"
+            is_improving = False
+        else:
+            direction = "unchanged"
+            is_improving = False
+
+        return {
+            "direction": direction,
+            "percent_change": round(percent_change, 2),
+            "is_improving": is_improving,
+            "first_value": first_avg,
+            "last_value": last_avg,
+            "period_start": sorted_data[0].get("date"),
+            "period_end": sorted_data[-1].get("date")
+        }
