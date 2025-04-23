@@ -5,9 +5,12 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.orm import Session as db_session
 from contextlib import contextmanager
-from orm import User, Session, EMGData, Exercise, ExerciseSet, Sensors, SensorPositionEnum
+from orm import User, Session, EMGData, Exercise, ExerciseSet, Sensors, SensorPositionEnum, UserRoleEnum
 from uuid import uuid4
 import structlog
+from exceptions import UserDoesNotExist, SessionDoesNotExist
+
+active_participants: Dict[str, List[Dict]] = {}
 
 
 class BaseAbstraction:
@@ -39,10 +42,161 @@ class UserAbstraction(BaseAbstraction):
 
 
 class SessionAbstraction(BaseAbstraction):
+
     def create_session(self, session: dict) -> Session:
+        """"
+        Create a session
+        """
         with self.transaction():
             session = Session(**session)
             self.db.add(session)
+            self.db.flush()
+            return session
+
+    def get_session_by_id(self, session_id: str) -> Optional[Session]:
+        """Get a session by its ID"""
+        return self.db.query(Session).filter(Session.id == session_id).first()
+
+    def get_sessions_by_patient(self, patient_id: str) -> List[Session]:
+        """Get all sessions for a specific patient"""
+        return self.db.query(Session).filter(Session.patient_id == patient_id).all()
+
+    def get_sessions_by_therapist(self, therapist_id: str) -> List[Session]:
+        """Get all sessions for a specific therapist"""
+        return self.db.query(Session).filter(Session.therapist_id == therapist_id).all()
+
+    def join_session(self, session_id: str, user_id: str) -> Dict:
+        """
+        Allow a user to join a session
+
+        Args:
+            session_id: The ID of the session to join
+            user_id: The ID of the user joining the session
+
+        Returns:
+            Dictionary with session and user information
+        """
+        # Verify session exists
+        session = self.get_session_by_id(session_id)
+        if not session:
+            self.logger.error(
+                "Failed to retrieve non-existent session",
+                session_id=session_id
+            )
+            raise SessionDoesNotExist(f"Session with ID {session_id} not found")
+
+        # Verify user exists
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            self.logger.error(
+                "User not found",
+                user_id=user_id
+            )
+            raise UserDoesNotExist(f"User with ID {user_id} not found")
+
+        # Verify user has permission to join the session
+        # Only the assigned therapist, patient, or admin can join
+        is_authorized = (
+                str(session.patient_id) == user_id or
+                str(session.therapist_id) == user_id or
+                user.role == UserRoleEnum.admin
+        )
+
+        if not is_authorized:
+            raise ValueError("User is not authorized to join this session")
+
+        # Initialize the participants list for this session if it doesn't exist
+        if session_id not in active_participants:
+            active_participants[session_id] = []
+
+        # Check if user is already in the session
+        for participant in active_participants[session_id]:
+            if participant["user_id"] == user_id:
+                # User is already in the session, update their connection time
+                participant["joined_at"] = datetime.now()
+                self.logger.info(
+                    "User reconnected to session",
+                    user_id=user_id,
+                    session_id=session_id
+                )
+                return participant
+
+        # Add user to active participants
+        participant_info = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "name": f"{user.first_name} {user.last_name}",
+            "role": user.role.name,
+            "joined_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "is_patient": str(session.patient_id) == user_id,
+            "is_therapist": str(session.therapist_id) == user_id
+        }
+        active_participants[session_id].append(participant_info)
+
+        self.logger.info(
+            "User joined session",
+            user_id=user_id,
+            session_id=session_id,
+            role=user.role.name
+        )
+
+        return participant_info
+
+    def leave_session(self, session_id: str, user_id: str) -> Dict:
+        """
+        Allow a user to leave a session
+
+        Args:
+            session_id: The ID of the session to leave
+            user_id: The ID of the user leaving the session
+
+        Returns:
+            Dictionary with session and user information
+        """
+        # Verify session has active participants
+        if session_id not in active_participants:
+            raise ValueError(f"No active participants in session {session_id}")
+
+        # Find and remove user from participants
+        for i, participant in enumerate(active_participants[session_id]):
+            if participant["user_id"] == user_id:
+                # Remove user from the session
+                removed_participant = active_participants[session_id].pop(i)
+
+                # If no participants left, remove the session from the active sessions
+                if not active_participants[session_id]:
+                    del active_participants[session_id]
+
+                self.logger.info(
+                    "User left session",
+                    user_id=user_id,
+                    session_id=session_id
+                )
+
+                return {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "left_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "duration": str((datetime.now() - datetime.strptime(removed_participant["joined_at"], "%Y-%m-%d %H:%M:%S")).total_seconds())
+                }
+
+        # User was not in the session
+        raise ValueError(f"User {user_id} is not an active participant in session {session_id}")
+
+    def get_session_participants(self, session_id: str) -> List[Dict]:
+        """
+        Get all active participants in a session
+
+        Args:
+            session_id: The ID of the session
+
+        Returns:
+            List of participant information dictionaries
+        """
+        if session_id not in active_participants:
+            return []
+
+        return active_participants[session_id]
 
 
 class MQTTAbstraction(BaseAbstraction):
