@@ -1,3 +1,4 @@
+import uuid
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -18,16 +19,17 @@ message_handler = get_mqtt_abstraction()
 async def lifespan(app: FastAPI):
     # Startup
     configure_logging()
-    mqtt_service.setup_mqtt_client(message_handler=message_handler)
+    client_id = f'emg-client-{uuid.uuid4()}'
+    mqtt_service.setup_mqtt_client(client_id=client_id, message_handler=message_handler)
 
     yield  # The app runs during this time
 
     # Shutdown
-    mqtt_service.disconnect_client(client_id="default")
-    mqtt_service.remove_client(client_id="default")
+    mqtt_service.disconnect_client(client_id=client_id)
+    mqtt_service.remove_client(client_id=client_id)
 
 
-app = FastAPI(title="Tele-rehabilitation Interface")
+app = FastAPI(title="Tele-rehabilitation Interface", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
