@@ -25,3 +25,10 @@ class UserDoesNotExist(AppExceptions):
     Exception raised on attempt to perform any action
     for a user that does not exist.
     """
+
+
+class SessionDoesNotExist(AppExceptions):
+    """
+    Exception raised on attempt to perform any
+    action for a session that does not exist
+    """
