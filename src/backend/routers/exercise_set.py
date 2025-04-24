@@ -101,6 +101,7 @@ def start_exercise_set(
             raise HTTPException(status_code=404, detail="Exercise not found for this set")
 
         # Set this as the active exercise set for the session
+        # This will now also handle MQTT subscription
         session_id = exercise["session_id"]
         mqtt_service.set_active_exercise_set(session_id, str(set_id))
 
@@ -130,6 +131,7 @@ def complete_exercise_set(
             raise HTTPException(status_code=404, detail="Exercise not found for this set")
 
         # Clear this as the active exercise set for the session
+        # This will now also handle MQTT unsubscription
         session_id = exercise["session_id"]
         mqtt_service.clear_active_exercise_set(session_id)
 
