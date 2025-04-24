@@ -198,6 +198,37 @@ class SessionAbstraction(BaseAbstraction):
 
         return active_participants[session_id]
 
+    def complete_session(self, session_id: str, completed_time: datetime, notes: Optional[str] = None) -> SessionModel:
+        """
+        Mark a session as completed with the provided datetime
+
+        Args:
+            session_id: The ID of the session to complete
+            completed_time: The datetime when the session was completed
+            notes: Optional notes to add to the session
+
+        Returns:
+            Updated session model
+        """
+        with self.transaction():
+            session = self.get_session_by_id(session_id)
+            if not session:
+                raise ValueError(f"Session with ID {session_id} not found")
+
+            # Set the completed datetime
+            session.completed = completed_time
+
+            # Update notes if provided
+            if notes is not None:
+                session.notes = notes
+
+            # Calculate duration in minutes if we have both start and end times
+            if session.scheduled_time and session.completed:
+                duration_delta = session.completed - session.scheduled_time
+                session.duration = int(duration_delta.total_seconds() / 60)
+
+            return session
+
 
 active_exercise_sets = {}
 class MQTTAbstraction(BaseAbstraction):

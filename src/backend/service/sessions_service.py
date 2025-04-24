@@ -1,5 +1,6 @@
 from typing import Dict, Optional, List
 import structlog
+from datetime import datetime
 from src.backend.abstraction import SessionAbstraction
 
 
@@ -99,6 +100,60 @@ class SessionService:
             }
             for session in sessions_orm
         ]
+
+    def get_all_sessions(self) -> List[Dict]:
+        """Get all sessions (for admins)"""
+        self.logger.info("Getting all sessions")
+
+        sessions_orm = self.session_abstraction.get_all_sessions()
+
+        # Convert to list of dictionaries
+        return [
+            {
+                "id": str(session.id),
+                "patient_id": str(session.patient_id),
+                "therapist_id": str(session.therapist_id),
+                "scheduled_time": session.scheduled_time.isoformat() if session.scheduled_time else None,
+                "completed": session.completed.isoformat() if session.completed else None,
+                "notes": session.notes,
+                "duration": session.duration
+            }
+            for session in sessions_orm
+        ]
+
+    def complete_session(self, session_id: str, notes: Optional[str] = None) -> Dict:
+        """
+        Mark a session as completed with current datetime
+
+        Args:
+            session_id: The ID of the session to complete
+            notes: Optional notes to add to the session
+
+        Returns:
+            Updated session data
+        """
+        self.logger.info(
+            "Completing session",
+            session_id=session_id
+        )
+
+        # Complete the session with current datetime
+        completed_session = self.session_abstraction.complete_session(
+            session_id=session_id,
+            completed_time=datetime.now(),
+            notes=notes
+        )
+
+        # Convert to dictionary
+        return {
+            "id": str(completed_session.id),
+            "patient_id": str(completed_session.patient_id),
+            "therapist_id": str(completed_session.therapist_id),
+            "scheduled_time": completed_session.scheduled_time.isoformat() if completed_session.scheduled_time else None,
+            "completed": completed_session.completed.isoformat() if completed_session.completed else None,
+            "notes": completed_session.notes,
+            "duration": completed_session.duration
+        }
 
     def join_session(self, session_id: str, user_id: str) -> Dict:
         """Allow a user to join a session"""
