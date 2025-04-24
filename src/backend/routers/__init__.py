@@ -6,6 +6,7 @@ from .exercises import router as exercises_router
 from .exercise_set import router as exercises_set_router
 from .emg_data import router as emg_data_router
 from .ml_prediction import router as ml_router
+from .authentication import router as auth_router
 
 router = APIRouter()
 router.include_router(users_router)
@@ -15,3 +16,4 @@ router.include_router(exercises_router)
 router.include_router(exercises_set_router)
 router.include_router(emg_data_router)
 router.include_router(ml_router)
+router.include_router(auth_router)

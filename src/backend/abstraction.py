@@ -199,6 +199,7 @@ class SessionAbstraction(BaseAbstraction):
         return active_participants[session_id]
 
 
+active_exercise_sets = {}
 class MQTTAbstraction(BaseAbstraction):
     def add_emg_data(self, emg_data: dict):
         try:
@@ -210,8 +211,8 @@ class MQTTAbstraction(BaseAbstraction):
                 if sensor:
                     session_id = sensor.session_id
                     # Check if there's an active exercise set for this session
-                    if session_id in self.active_exercise_sets:
-                        emg_data["exercise_set_id"] = self.active_exercise_sets[session_id]
+                    if session_id in active_exercise_sets:
+                        emg_data["exercise_set_id"] = active_exercise_sets[session_id]
             with self.transaction():
                 emg_data = EMGData(**emg_data)
                 self.db.add(emg_data)
@@ -222,7 +223,7 @@ class MQTTAbstraction(BaseAbstraction):
 
     def set_active_exercise_set(self, session_id: str, exercise_set_id: str):
         """Set the active exercise set for a session"""
-        self.active_exercise_sets[session_id] = exercise_set_id
+        active_exercise_sets[session_id] = exercise_set_id
         self.logger.info(f"Set active exercise set",
                          session_id=session_id,
                          exercise_set_id=exercise_set_id)
@@ -231,9 +232,9 @@ class MQTTAbstraction(BaseAbstraction):
     def clear_active_exercise_set(self, session_id: str):
         """Clear the active exercise set for a session"""
         previous_set_id = None
-        if session_id in self.active_exercise_sets:
-            previous_set_id = self.active_exercise_sets[session_id]
-            del self.active_exercise_sets[session_id]
+        if session_id in active_exercise_sets:
+            previous_set_id = active_exercise_sets[session_id]
+            del active_exercise_sets[session_id]
             self.logger.info(f"Cleared active exercise set",
                              session_id=session_id,
                              previous_set_id=previous_set_id)
@@ -924,4 +925,114 @@ class EMGDataAbstraction(BaseAbstraction):
             "last_value": last_avg,
             "period_start": sorted_data[0].get("date"),
             "period_end": sorted_data[-1].get("date")
+        }
+
+
+active_sessions = {}
+
+
+class AuthAbstraction(BaseAbstraction):
+
+    def login_with_email(self, email: str) -> Dict:
+        """
+        Simple login function that checks if email exists in the database
+
+        Args:
+            email: The email address to check
+
+        Returns:
+            Dictionary with user info and auth token if successful
+
+        Raises:
+            ValueError: If the email doesn't exist in the database
+        """
+        # Check if the email exists
+        user = self.db.query(User).filter(User.email == email).first()
+
+        if not user:
+            self.logger.warning(f"Login attempt with non-existent email: {email}")
+            raise ValueError(f"No user found with email: {email}")
+
+        # Generate a simple auth token
+        auth_token = str(uuid4())
+
+        # Create user data dictionary
+        user_data = {
+            "id": str(user.id),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role.name,
+            "auth_token": auth_token
+        }
+
+        # Store in active sessions
+        active_sessions[auth_token] = user_data
+
+        self.logger.info(
+            "User logged in successfully",
+            user_id=str(user.id),
+            email=user.email,
+            role=user.role.name
+        )
+
+        return user_data
+
+    def logout(self, auth_token: str) -> bool:
+        """
+        Logout a user by invalidating their auth token
+
+        Args:
+            auth_token: The authentication token to invalidate
+
+        Returns:
+            True if successful, False if token wasn't found
+        """
+        if auth_token in active_sessions:
+            user_data = active_sessions[auth_token]
+            del active_sessions[auth_token]
+
+            self.logger.info(
+                "User logged out successfully",
+                user_id=user_data.get("id"),
+                email=user_data.get("email")
+            )
+
+            return True
+
+        return False
+
+    def verify_token(self, auth_token: str) -> Optional[Dict]:
+        """
+        Verify if an auth token is valid
+
+        Args:
+            auth_token: The authentication token to check
+
+        Returns:
+            User data dictionary if valid, None otherwise
+        """
+        return active_sessions.get(auth_token)
+
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        """
+        Get user info by email
+
+        Args:
+            email: The email to look up
+
+        Returns:
+            User data dictionary if found, None otherwise
+        """
+        user = self.db.query(User).filter(User.email == email).first()
+
+        if not user:
+            return None
+
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role.name
         }
