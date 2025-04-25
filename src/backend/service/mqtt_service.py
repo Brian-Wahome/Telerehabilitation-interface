@@ -3,6 +3,7 @@ import uuid
 import structlog
 from src.backend.mqtt import EMGMQTTClient
 from ..exceptions import MQTTClientNotFound
+from ..config import mqtt_client_id
 
 
 class MQTTService:
@@ -10,6 +11,7 @@ class MQTTService:
         self.mqtt_clients = {}
         self.logger = structlog.get_logger(__name__)
         self.active_subscriptions = {}
+        self.mqtt_abstraction = None
 
     def setup_mqtt_client(self, broker_host="localhost", broker_port=8083, username=None, password=None,
                           topic_pattern="emg/+/+/data", transport="websockets", client_id="emg-client",
@@ -43,6 +45,7 @@ class MQTTService:
                 "MQTT client successfully connected to broker",
                 mqtt_client_id=client_id
             )
+            self.mqtt_abstraction = message_handler
         except Exception as e:
             self.logger.error(
                 "Failed to setup MQTT client",
@@ -51,7 +54,7 @@ class MQTTService:
             )
             raise
 
-    def get_client(self, client_id="default"):
+    def get_client(self, client_id=mqtt_client_id):
         """Get a specific MQTT client"""
         if client_id not in self.mqtt_clients:
             self.logger.error(
@@ -61,7 +64,7 @@ class MQTTService:
             raise MQTTClientNotFound(f"MQTT client with ID '{client_id}' not found")
         return self.mqtt_clients[client_id]
 
-    def disconnect_client(self, client_id="emg-client"):
+    def disconnect_client(self, client_id=mqtt_client_id):
         """
         Disconnect client from mqtt broker
         :param client_id: ID of client to be disconnected
@@ -106,7 +109,7 @@ class MQTTService:
             return True
         return False
 
-    def set_active_exercise_set(self, session_id: str, exercise_set_id: str, client_id="default"):
+    def set_active_exercise_set(self, session_id: str, exercise_set_id: str, client_id=mqtt_client_id):
         """
         Set the active exercise set for a session and start MQTT subscription
 

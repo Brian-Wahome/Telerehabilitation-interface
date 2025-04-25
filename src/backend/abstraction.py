@@ -198,7 +198,7 @@ class SessionAbstraction(BaseAbstraction):
 
         return active_participants[session_id]
 
-    def complete_session(self, session_id: str, completed_time: datetime, notes: Optional[str] = None) -> SessionModel:
+    def complete_session(self, session_id: str, completed_time: datetime, notes: Optional[str] = None) -> Session:
         """
         Mark a session as completed with the provided datetime
 

@@ -7,6 +7,9 @@ from src.backend.dependencies.services import get_exercise_set_service, get_mqtt
 from src.backend.service.exercise_set_service import ExerciseSetService
 from src.backend.service.mqtt_service import MQTTService
 from src.backend.service.excercise_service import ExerciseService
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 class ExerciseSetCreate(BaseModel):
@@ -50,6 +53,10 @@ def create_exercise_set(
         exercise_set = exercise_set_service.create_set(set_dict)
         return exercise_set
     except Exception as e:
+        logger.error(
+            f'Error whilst creating exercise-set{e}',
+            exc_info=True,
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -137,6 +144,11 @@ def complete_exercise_set(
 
         return exercise_set
     except Exception as e:
+        logger.error(
+            "Error occurred whilst completing a set",
+            exc_info=True,
+        )
+
         raise HTTPException(status_code=400, detail=str(e))
 
 

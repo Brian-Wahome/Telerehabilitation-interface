@@ -8,18 +8,18 @@ from database import engine, Base
 from src.config.logging_config import configure_logging
 from src.backend.routers import router
 from dependencies.services import mqtt_service, get_mqtt_abstraction
+from config import mqtt_client_id
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
 message_handler = get_mqtt_abstraction()
-
+client_id = mqtt_client_id
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     configure_logging()
-    client_id = f'emg-client-{uuid.uuid4()}'
     mqtt_service.setup_mqtt_client(client_id=client_id, message_handler=message_handler)
 
     yield  # The app runs during this time

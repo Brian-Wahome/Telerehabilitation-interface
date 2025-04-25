@@ -37,7 +37,7 @@ def get_exercise_service(db: Session = Depends(get_db)) -> ExerciseService:
 
 def get_exercise_set_service(db: Session = Depends(get_db)) -> ExerciseSetService:
     exercise_set_abstraction = ExerciseSetAbstraction(db)
-    return ExerciseSetAbstraction(exercise_set_abstraction)
+    return ExerciseSetService(exercise_set_abstraction)
 
 
 def get_emg_data_service(db: Session = Depends(get_db)) -> EMGDataService:
