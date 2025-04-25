@@ -78,7 +78,7 @@ class ExerciseSet(Base):
     set_number = Column(Integer, nullable=False)
     repetitions = Column(Integer)
     weight = Column(Float)
-    start_time = Column(TIMESTAMP(timezone=True), nullable=False)
+    start_time = Column(TIMESTAMP(timezone=True), nullable=True)
     end_time = Column(TIMESTAMP(timezone=True))
     completed = Column(Boolean, default=False)
     notes = Column(String(500))
