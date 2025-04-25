@@ -5,17 +5,16 @@ from src.backend.mqtt import EMGMQTTClient
 from ..exceptions import MQTTClientNotFound
 from ..config import mqtt_client_id
 
+mqtt_clients = {}
 
 class MQTTService:
-    def __init__(self):
-        self.mqtt_clients = {}
+    def __init__(self, mqtt_abstraction):
         self.logger = structlog.get_logger(__name__)
         self.active_subscriptions = {}
-        self.mqtt_abstraction = None
+        self.mqtt_abstraction = mqtt_abstraction
 
     def setup_mqtt_client(self, broker_host="localhost", broker_port=8083, username=None, password=None,
-                          topic_pattern="emg/+/+/data", transport="websockets", client_id="emg-client",
-                          message_handler=None):
+                          topic_pattern="emg/+/data", transport="websockets", client_id="emg-client"):
         """
         Function to set up a MQTT client
         :param broker_host: MQTT broker hostname or IP
@@ -32,7 +31,7 @@ class MQTTService:
             mqtt_client = EMGMQTTClient(
                 broker_host,
                 broker_port,
-                message_handler,
+                self.mqtt_abstraction,
                 username,
                 password,
                 topic_pattern,
@@ -40,12 +39,11 @@ class MQTTService:
                 client_id
             )
             mqtt_client.connect()
-            self.mqtt_clients[client_id] = mqtt_client
+            mqtt_clients[client_id] = mqtt_client
             self.logger.info(
                 "MQTT client successfully connected to broker",
                 mqtt_client_id=client_id
             )
-            self.mqtt_abstraction = message_handler
         except Exception as e:
             self.logger.error(
                 "Failed to setup MQTT client",
@@ -56,13 +54,13 @@ class MQTTService:
 
     def get_client(self, client_id=mqtt_client_id):
         """Get a specific MQTT client"""
-        if client_id not in self.mqtt_clients:
+        if client_id not in mqtt_clients:
             self.logger.error(
                 f"MQTT client with ID '{client_id}' not found",
                 mqtt_client_id=client_id,
             )
             raise MQTTClientNotFound(f"MQTT client with ID '{client_id}' not found")
-        return self.mqtt_clients[client_id]
+        return mqtt_clients[client_id]
 
     def disconnect_client(self, client_id=mqtt_client_id):
         """
@@ -72,7 +70,7 @@ class MQTTService:
         """
         try:
             # Check if we have this specific client ID
-            if client_id not in self.mqtt_clients:
+            if client_id not in mqtt_clients:
                 self.logger.error(
                     f"MQTT client with ID '{client_id}' not found",
                     mqtt_client_id=client_id,
@@ -80,7 +78,7 @@ class MQTTService:
                 raise MQTTClientNotFound(f"MQTT client with ID '{client_id}' not found")
 
             # Get the client we want to disconnect
-            client = self.mqtt_clients[client_id]
+            client = mqtt_clients[client_id]
 
             # Send disconnect command using the client itself
             topic = "control/disconnect"
@@ -103,8 +101,8 @@ class MQTTService:
 
     def remove_client(self, client_id):
         """Remove a client from our registry (after confirming disconnection)"""
-        if client_id in self.mqtt_clients:
-            del self.mqtt_clients[client_id]
+        if client_id in mqtt_clients:
+            del mqtt_clients[client_id]
             self.logger.info("Client removed from registry", mqtt_client_id=client_id)
             return True
         return False

@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import Depends, Header, Cookie, HTTPException
 from sqlalchemy.orm import Session
-from src.backend.database import get_db
+from src.backend.database import get_db, SessionLocal
 from src.backend.abstraction import UserAbstraction, SessionAbstraction, ExerciseAbstraction, ExerciseSetAbstraction, \
     EMGDataAbstraction, MQTTAbstraction, AuthAbstraction
 from src.backend.service.users_service import UserService
@@ -13,7 +13,9 @@ from src.backend.service.exercise_set_service import ExerciseSetService
 from src.backend.service.emg_data_service import EMGDataService
 from src.backend.service.authentication_service import AuthService
 
-mqtt_service = MQTTService()
+db = SessionLocal()
+mqtt_abstraction_singleton = MQTTAbstraction(db)
+mqtt_service = MQTTService(mqtt_abstraction_singleton)
 
 
 def get_user_service(db: Session = Depends(get_db)) -> UserService:
@@ -75,3 +77,5 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     return user_data
+
+

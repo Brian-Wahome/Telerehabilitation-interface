@@ -40,6 +40,47 @@ class UserAbstraction(BaseAbstraction):
             user = User(**user)
             self.db.add(user)
 
+    def get_user_by_id(self, user_id: str) -> Optional[Dict]:
+        """Get a user by their ID"""
+        user = self.db.query(User).filter(User.id == user_id).first()
+
+        if not user:
+            return None
+
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role.name,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+
+
+    def get_users(self, role: Optional[UserRoleEnum] = None) -> List[Dict]:
+        """Get all users with optional role filtering"""
+        # Start with a base query
+        query = self.db.query(User)
+
+        # Apply role filter if specified
+        if role is not None:
+            query = query.filter(User.role == role)
+
+        # Execute query and convert to list of dictionaries
+        users = query.all()
+
+        return [
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "role": user.role.name,
+                "created_at": user.created_at.isoformat() if user.created_at else None
+            }
+            for user in users
+        ]
+
 
 class SessionAbstraction(BaseAbstraction):
 
@@ -53,17 +94,101 @@ class SessionAbstraction(BaseAbstraction):
             self.db.flush()
             return session
 
-    def get_session_by_id(self, session_id: str) -> Optional[Session]:
-        """Get a session by its ID"""
-        return self.db.query(Session).filter(Session.id == session_id).first()
+    # In abstraction.py, modify the get_session_by_id method
 
-    def get_sessions_by_patient(self, patient_id: str) -> List[Session]:
-        """Get all sessions for a specific patient"""
-        return self.db.query(Session).filter(Session.patient_id == patient_id).all()
+    def get_session_by_id(self, session_id: str) -> Optional[Dict]:
+        """Get a session by its ID with user information"""
+        session = self.db.query(Session).filter(Session.id == session_id).first()
 
-    def get_sessions_by_therapist(self, therapist_id: str) -> List[Session]:
-        """Get all sessions for a specific therapist"""
-        return self.db.query(Session).filter(Session.therapist_id == therapist_id).all()
+        if not session:
+            return None
+
+        # Get patient and therapist info
+        patient = self.db.query(User).filter(User.id == session.patient_id).first()
+        therapist = self.db.query(User).filter(User.id == session.therapist_id).first()
+
+        # Create response with user details
+        return {
+            "id": str(session.id),
+            "patient_id": str(session.patient_id),
+            "therapist_id": str(session.therapist_id),
+            "patient": {
+                "id": str(patient.id),
+                "name": f"{patient.first_name} {patient.last_name}",
+                "email": patient.email
+            } if patient else None,
+            "therapist": {
+                "id": str(therapist.id),
+                "name": f"{therapist.first_name} {therapist.last_name}",
+                "email": therapist.email
+            } if therapist else None,
+            "scheduled_time": session.scheduled_time.isoformat() if session.scheduled_time else None,
+            "completed": session.completed.isoformat() if session.completed else None,
+            "notes": session.notes,
+            "duration": session.duration
+        }
+
+    def get_sessions_by_patient(self, patient_id: str) -> List[Dict]:
+        """Get all sessions for a specific patient with user info"""
+        sessions = self.db.query(Session).filter(Session.patient_id == patient_id).all()
+
+        result = []
+        for session in sessions:
+            therapist = self.db.query(User).filter(User.id == session.therapist_id).first()
+            patient = self.db.query(User).filter(User.id == session.patient_id).first()
+
+            result.append({
+                "id": str(session.id),
+                "patient_id": str(session.patient_id),
+                "therapist_id": str(session.therapist_id),
+                "patient": {
+                    "id": str(patient.id),
+                    "name": f"{patient.first_name} {patient.last_name}",
+                    "email": patient.email
+                } if patient else None,
+                "therapist": {
+                    "id": str(therapist.id),
+                    "name": f"{therapist.first_name} {therapist.last_name}",
+                    "email": therapist.email
+                } if therapist else None,
+                "scheduled_time": session.scheduled_time.isoformat() if session.scheduled_time else None,
+                "completed": session.completed.isoformat() if session.completed else None,
+                "notes": session.notes,
+                "duration": session.duration
+            })
+
+        return result
+
+    def get_sessions_by_therapist(self, therapist_id: str) -> List[Dict]:
+        """Get all sessions for a specific therapist with user info"""
+        sessions = self.db.query(Session).filter(Session.therapist_id == therapist_id).all()
+
+        result = []
+        for session in sessions:
+            therapist = self.db.query(User).filter(User.id == session.therapist_id).first()
+            patient = self.db.query(User).filter(User.id == session.patient_id).first()
+
+            result.append({
+                "id": str(session.id),
+                "patient_id": str(session.patient_id),
+                "therapist_id": str(session.therapist_id),
+                "patient": {
+                    "id": str(patient.id),
+                    "name": f"{patient.first_name} {patient.last_name}",
+                    "email": patient.email
+                } if patient else None,
+                "therapist": {
+                    "id": str(therapist.id),
+                    "name": f"{therapist.first_name} {therapist.last_name}",
+                    "email": therapist.email
+                } if therapist else None,
+                "scheduled_time": session.scheduled_time.isoformat() if session.scheduled_time else None,
+                "completed": session.completed.isoformat() if session.completed else None,
+                "notes": session.notes,
+                "duration": session.duration
+            })
+
+        return result
 
     def join_session(self, session_id: str, user_id: str) -> Dict:
         """

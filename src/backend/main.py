@@ -7,20 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 from src.config.logging_config import configure_logging
 from src.backend.routers import router
-from dependencies.services import mqtt_service, get_mqtt_abstraction
+from dependencies.services import mqtt_service
 from config import mqtt_client_id
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-message_handler = get_mqtt_abstraction()
 client_id = mqtt_client_id
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     configure_logging()
-    mqtt_service.setup_mqtt_client(client_id=client_id, message_handler=message_handler)
+    mqtt_service.setup_mqtt_client(client_id=client_id)
 
     yield  # The app runs during this time
 

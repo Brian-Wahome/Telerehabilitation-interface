@@ -13,7 +13,7 @@ router = APIRouter(
 
 
 @router.get("/sessions/{session_id}")
-def get_session_emg_data(
+async def get_session_emg_data(
         session_id: UUID4,
         start_time: Optional[str] = Query(None),
         end_time: Optional[str] = Query(None),
@@ -38,7 +38,7 @@ def get_session_emg_data(
 
 
 @router.post("/sessions/multiple")
-def get_multiple_sessions_emg_data(
+async def get_multiple_sessions_emg_data(
         session_ids: List[UUID4],
         start_time: Optional[str] = Query(None),
         end_time: Optional[str] = Query(None),
