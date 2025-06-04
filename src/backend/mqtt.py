@@ -1,5 +1,4 @@
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from socket import socket
@@ -14,7 +13,7 @@ logger = structlog.getLogger(__name__)
 
 class EMGMQTTClient:
     def __init__(self, broker_host, broker_port, message_handler, username=None, password=None,
-                 topic_pattern="emg/+/data", transport="websockets"):
+                 topic_pattern="emg/+/data", transport="websockets", client_id=f"emg-client-{uuid.uuid4()}"):
         """
         Initialize the MQTT client for EMG data.
 
@@ -28,11 +27,12 @@ class EMGMQTTClient:
                            The '+' is a wildcard for any single topic level
                            The '#' is a wildcard for multiple topic levels
             transport: Transport protocol ("websockets" or "tcp")
+            client_id: Client identifier
         """
         # Create client using MQTT v5 protocol and specified transport
         self.client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"emg-client-{uuid.uuid4()}",
+            client_id,
             transport=transport
         )
 
@@ -40,6 +40,8 @@ class EMGMQTTClient:
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
+        self.client.on_subscribe = self.on_subscribe
+        self.client.on_unsubscribe = self.on_unsubscribe
 
         # Set credentials if provided. Not needed for local broker setup
         if username and password:
@@ -49,10 +51,19 @@ class EMGMQTTClient:
         self.broker_port = broker_port
         self.transport = transport
         self.message_handler = message_handler
-        self.topic_pattern = topic_pattern
+        self.default_topic_pattern = topic_pattern
+        self.client_id = client_id
 
-    def connect(self):
-        """Connect to the MQTT broker and start the loop."""
+        # Track active subscriptions
+        self.active_subscriptions = set()
+
+    def connect(self, auto_subscribe=True):
+        """
+        Connect to the MQTT broker and start the loop.
+
+        Args:
+            auto_subscribe: Whether to automatically subscribe to the default topic pattern
+        """
         try:
             # Ensure port is an integer
             port = int(self.broker_port) if not isinstance(self.broker_port, int) else self.broker_port
@@ -99,6 +110,10 @@ class EMGMQTTClient:
             self.client.connect(broker_address, port, 60)
             self.client.loop_start()
             logger.info(f"Successfully connected to MQTT broker at {broker_address}:{port}")
+
+            # Store connection info for auto-subscription after connection
+            self._auto_subscribe = auto_subscribe
+
         except socket.gaierror as e:
             # Handle DNS resolution errors specifically
             logger.error(f"Unable to resolve hostname '{self.broker_host}'. Error: {e}")
@@ -117,9 +132,14 @@ class EMGMQTTClient:
         """Callback when connected to the MQTT broker (API v2 signature)."""
         if rc == 0:
             logger.info("Successfully connected to MQTT broker")
-            # Subscribe to EMG data topics using the configured pattern
-            client.subscribe(self.topic_pattern)
-            logger.info(f"Subscribed to topic: {self.topic_pattern}")
+
+            # Subscribe to control disconnect topic
+            client.subscribe("control/disconnect", 0)
+            logger.info("Subscribed to control/disconnect topic")
+
+            # If auto_subscribe is True, subscribe to the default topic pattern
+            if getattr(self, '_auto_subscribe', False):
+                self.subscribe(self.default_topic_pattern)
         else:
             logger.error(f"Connection to MQTT broker failed with code {rc}")
 
@@ -142,6 +162,9 @@ class EMGMQTTClient:
                 except json.JSONDecodeError:
                     # If not valid JSON, use raw payload
                     payload = msg.payload.decode()
+
+                if msg.topic == "control/disconnect" and payload["client_id"] == self.client_id:
+                    self.client.disconnect()
 
                 # Create message data with topic and payload
                 message_data = {
@@ -172,12 +195,70 @@ class EMGMQTTClient:
         except Exception as e:
             logger.error(f"Error in message callback: {e}", exc_info=True)
 
-    def on_disconnect(self, client, userdata, rc, properties=None):
-        """Callback when disconnected from the broker (API v2 signature)."""
-        if rc != 0:
-            logger.warning(f"Unexpected disconnection from MQTT broker with code {rc}")
+    def on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
+        """Callback when disconnected from the broker (API v2 with MQTT v5)."""
+        if reason_code != 0:
+            logger.warning(
+                f"Unexpected disconnection from MQTT broker. Reason code: {reason_code}, Flags: {disconnect_flags}")
         else:
-            logger.info("Disconnected from MQTT broker")
+            logger.info("Disconnected from MQTT broker cleanly")
+
+        # Handle properties if needed
+        if properties:
+            logger.debug(f"Disconnect properties: {properties}")
+
+        # Clear active subscriptions
+        self.active_subscriptions.clear()
+
+    def on_subscribe(self, client, userdata, mid, reason_codes, properties=None):
+        """Callback when a subscription is confirmed by the broker."""
+        logger.info(f"Subscription confirmed with message ID: {mid}, Reason codes: {reason_codes}")
+
+    def on_unsubscribe(self, client, userdata, mid, reason_codes, properties=None):
+        """Callback when an unsubscription is confirmed by the broker."""
+        logger.info(f"Unsubscription confirmed with message ID: {mid}, Reason codes: {reason_codes}")
+
+    def subscribe(self, topic_pattern, qos=0):
+        """
+        Subscribe to a topic pattern
+
+        Args:
+            topic_pattern: The topic pattern to subscribe to
+            qos: Quality of Service (0, 1, or 2)
+        """
+        try:
+            result, mid = self.client.subscribe(topic_pattern, qos)
+            if result == mqtt.MQTT_ERR_SUCCESS:
+                logger.info(f"Subscribed to topic pattern: {topic_pattern}, MID: {mid}")
+                self.active_subscriptions.add(topic_pattern)
+                return True
+            else:
+                logger.error(f"Failed to subscribe to topic pattern: {topic_pattern}, Error code: {result}")
+                return False
+        except Exception as e:
+            logger.error(f"Error subscribing to topic pattern: {topic_pattern}, Error: {e}")
+            return False
+
+    def unsubscribe(self, topic_pattern):
+        """
+        Unsubscribe from a topic pattern
+
+        Args:
+            topic_pattern: The topic pattern to unsubscribe from
+        """
+        try:
+            result, mid = self.client.unsubscribe(topic_pattern)
+            if result == mqtt.MQTT_ERR_SUCCESS:
+                logger.info(f"Unsubscribed from topic pattern: {topic_pattern}, MID: {mid}")
+                if topic_pattern in self.active_subscriptions:
+                    self.active_subscriptions.remove(topic_pattern)
+                return True
+            else:
+                logger.error(f"Failed to unsubscribe from topic pattern: {topic_pattern}, Error code: {result}")
+                return False
+        except Exception as e:
+            logger.error(f"Error unsubscribing from topic pattern: {topic_pattern}, Error: {e}")
+            return False
 
     def publish(self, topic, payload, qos=0, retain=False, properties=None):
         """
@@ -218,3 +299,4 @@ class EMGMQTTClient:
         self.client.loop_stop()
         self.client.disconnect()
         logger.info("Disconnected from MQTT broker")
+        self.active_subscriptions.clear()

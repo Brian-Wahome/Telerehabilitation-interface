@@ -1,14 +1,34 @@
+import uuid
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 from src.config.logging_config import configure_logging
 from src.backend.routers import router
+from dependencies.services import mqtt_service
+from config import mqtt_client_id
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Tele-rehabilitation Interface", on_startup=[configure_logging])
+client_id = mqtt_client_id
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    configure_logging()
+    mqtt_service.setup_mqtt_client(client_id=client_id)
+
+    yield  # The app runs during this time
+
+    # Shutdown
+    mqtt_service.disconnect_client(client_id=client_id)
+    mqtt_service.remove_client(client_id=client_id)
+
+
+app = FastAPI(title="Tele-rehabilitation Interface", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
@@ -21,6 +41,7 @@ app.add_middleware(
 
 # add routers to app
 app.include_router(router)
+
 
 @app.get("/")
 async def root():
